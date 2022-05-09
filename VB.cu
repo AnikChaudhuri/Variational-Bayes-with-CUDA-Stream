@@ -1,8 +1,15 @@
+// This code implements the example shown in the Variational Bayes page on Wikipedia. Link: https://en.wikipedia.org/wiki/Variational_Bayesian_methods
+// Here two kernels named nor and gam were launched in parallel with CUDA stream.
+// Normal samples were drawn from a normal distribution and stored in vector ex_a.
+//These samples were used to estimate the mean and standard deviation by using Variational Bayes algorithm.
+//Run this code by using nvcc VB.cu
+// The output is the mean and standard deviation calculated in each iteration.
+
 #include <iostream>
 #include <cuda.h>
 #include <curand_kernel.h>
 #include <random>
-
+//This kernel calculates bn and samples from a normal distribution
 __global__ void nor(double* dlambdan, double lambda0, int dim, int gene, double mu_n, double x_sq, double* dbn, double mu0,
                     double b0,double xb, double* dmean, curandState_t *d_states){
 
@@ -14,7 +21,7 @@ __global__ void nor(double* dlambdan, double lambda0, int dim, int gene, double 
     
 }
 
-//Marsaglia and Tsang sampler (Gamma sampler)
+//This kernel calculates lambdan and samples from a Gamma distribution with Marsaglia and Tsang sampler (Gamma sampler).
 __global__ void gam(double* dlambdan, double lambda0, double dim, double gene, double an, double* dbn, double mu_n,
                     double* dvar, int count2, curandState_t *d_states){
     int idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -54,8 +61,8 @@ int main(){
     std::default_random_engine generator;
     std::normal_distribution<double> distribution(10.0,2.0);
 
-    for(int i = 0; i < dim*gene; i++){ex_a[i] = distribution(generator);} 
-    for(int i = 0; i < dim*gene; i++) std::cout << ex_a[i] <<std::endl;
+    for(int i = 0; i < dim*gene; i++){ex_a[i] = distribution(generator);} //generating data
+    for(int i = 0; i < dim*gene; i++) std::cout << ex_a[i] <<std::endl; //printing data
     double xb = 0; double x_sq = 0; double a = 0.3; double lambda0 = 1; double mu0 = 2; double b0 = 1.0; 
 
     double an = a + ((dim*gene)+1)/2.0; double* bn = new double[1]; bn[0] = 0.2;
@@ -82,31 +89,26 @@ int main(){
     cudaMemcpy(dbn, bn, sizeof(double)*1, cudaMemcpyHostToDevice);
     cudaMemcpy(dlambdan, lambdan, sizeof(double)*1, cudaMemcpyHostToDevice);
 
-    curandState_t* d_states;
+    curandState_t* d_states;//used in random number generation
     cudaMalloc(&d_states, sizeof(curandState_t)*1);
 
-    cudaStream_t stream1, stream2;
+    cudaStream_t stream1, stream2; //CUDA streams
     cudaStreamCreate(&stream1); cudaStreamCreate(&stream2); 
     int count2 = 0; 
     for(int i =0; i < 1000; i++){
         setup<<<1,1>>>(d_states,i);//setting up random numbers
 
-        nor<<<1,1,0,stream1>>>(dlambdan, lambda0, dim, gene, mu_n, x_sq, dbn, mu0,b0,xb, dmean, d_states);
+        nor<<<1,1,0,stream1>>>(dlambdan, lambda0, dim, gene, mu_n, x_sq, dbn, mu0,b0,xb, dmean, d_states);//Samples from the normal distribution on stream 1
 
-        gam<<<1,1,0,stream2>>>(dlambdan, lambda0, dim, gene, an, dbn, mu_n, dvar, count2, d_states);
-
+        gam<<<1,1,0,stream2>>>(dlambdan, lambda0, dim, gene, an, dbn, mu_n, dvar, count2, d_states);//Samples from the gamma distribution on stream 2
+        
+        //copying back the samples from device to host
         cudaMemcpy(bn, dbn, sizeof(double)*1, cudaMemcpyDeviceToHost);
         //cudaMemcpy(lambdan, dlambdan, sizeof(double)*1, cudaMemcpyDeviceToHost);
         cudaMemcpy(meancopy, dmean, sizeof(double)*1, cudaMemcpyDeviceToHost);
         cudaMemcpy(varcopy, dvar, sizeof(double)*1, cudaMemcpyDeviceToHost);
 
-        //mean[i] = meancopy[0];
-        //var[i] = varcopy[0];
-
-        //std::normal_distribution<double> dist(mu_n, 1/lambdan[0]);
-        //std::gamma_distribution<double> dist1(an, 1/bn[0]);
-        //mean[i] = dist(generator);
-        //var[i] = sqrt(1/dist1(generator));
+        
         std::cout<<"mean is "<< meancopy[0] <<" and s.d. is " << sqrt(1/varcopy[0]) << std::endl;
 
     }
