@@ -71,7 +71,7 @@ int main(){
     thrust::device_vector<double> d1(gene*dim); //device vector
     thrust::device_vector<double> d2(gene*dim); //device vector
 
-    d1 = ex_a; //copying host vector to device vector
+    d1 = ex_a; //copying from host vector to device vector
     double xb = thrust::reduce(d1.begin(), d1.end()); //adding all the samples
     thrust::transform(d1.begin(), d1.end(), d2.begin(), thrust::square<double>()); //squaring all the samples and storing on device vector d2
     double x_sq = thrust::reduce(d2.begin(), d2.end()); //adding all the elements in device vector d2
